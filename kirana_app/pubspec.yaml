@@ -1,0 +1,59 @@
+name: shopiq
+description: ShopIQ - Smart business companion for kirana stores and local retailers
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.1.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Localization
+  flutter_localizations:
+    sdk: flutter
+
+  # State + Navigation
+  flutter_riverpod: ^2.4.9
+  go_router: ^13.2.0
+
+  # UI + Charts
+  google_fonts: ^6.2.1
+  fl_chart: ^0.67.0
+
+  # Utilities
+  intl: ^0.20.2
+  collection: ^1.18.0
+  uuid: ^4.3.3
+  path: ^1.9.0
+
+  # Device integrations
+  url_launcher: ^6.2.4
+  shared_preferences: ^2.2.2
+  local_auth: ^2.3.0
+  flutter_secure_storage: ^9.2.2
+
+  # Storage / DB
+  drift: ^2.14.1
+  sqlite3_flutter_libs: ^0.5.20
+  path_provider: ^2.1.4
+
+  # Barcode scanner
+  mobile_scanner: ^5.2.3
+
+  # Backup export / share
+  share_plus: ^10.1.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+  # Drift code generation
+  drift_dev: ^2.14.1
+  build_runner: ^2.4.8
+
+flutter:
+  uses-material-design: true
+  generate: true
