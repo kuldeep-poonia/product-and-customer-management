@@ -45,6 +45,9 @@ dependencies:
   # Backup export / share
   share_plus: ^10.1.3
 
+  # Splash Screen
+  flutter_native_splash: ^2.4.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -57,3 +60,15 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   generate: true
+  assets:
+    - assets/images/
+
+flutter_native_splash:
+  color: "#FFFFFF"
+  image: assets/images/stellar_logo.png
+  android_gravity: center
+  ios_content_mode: center
+  android_12:
+    color: "#FFFFFF"
+    image: assets/images/stellar_logo.png
+  fullscreen: false

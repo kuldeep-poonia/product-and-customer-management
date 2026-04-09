@@ -6,6 +6,7 @@ import '../../app/theme.dart';
 import '../../core/app_constants.dart';
 import 'package:shopiq/app/app_localizations.dart';
 import '../../core/providers.dart';
+import '../../core/providers/subscription_provider.dart';
 import 'package:shopiq/app/app_lock_provider.dart';
 
 import '../../core/widgets.dart';
@@ -42,6 +43,7 @@ class SettingsScreen extends ConsumerWidget {
     final isDark = ref.watch(darkModeProvider);
     final language = ref.watch(languageProvider);
     final auth = ref.watch(authProvider);
+    final sub = ref.watch(subscriptionProvider);
     final cs = Theme.of(context).colorScheme;
     final l = context.l10n;
 
@@ -145,6 +147,19 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
 
+          // ── Subscription ─────────────────────────────────────────────────
+          _SectionLabel(label: language == 'hi' ? 'सदस्यता' : 'Subscription'),
+          _SettingsTile(
+            icon: Icons.star_outline,
+            iconColor: AppColors.amber600,
+            iconBg: AppColors.amber50,
+            title: language == 'hi' ? 'प्लान और बिलिंग' : 'Plan & Billing',
+            subtitle: _getSubscriptionSubtitle(sub, language),
+            trailing: Icon(Icons.arrow_forward_ios, size: 14, color: cs.outline),
+            onTap: () => context.push('/subscription'),
+          ),
+          const SizedBox(height: 8),
+
           // ── Security ─────────────────────────────────────────────────────
           _SectionLabel(label: l.security),
           const _SecuritySection(),
@@ -205,6 +220,18 @@ class SettingsScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  String _getSubscriptionSubtitle(SubscriptionState sub, String lang) {
+    if (sub.isActive) {
+      return lang == 'hi' ? 'Pro प्लान सक्रिय' : 'Pro Plan Active';
+    }
+    if (sub.isTrial) {
+      return lang == 'hi'
+          ? 'निःशुल्क ट्रायल: ${sub.trialDaysLeft} दिन शेष'
+          : 'Free Trial: ${sub.trialDaysLeft} days left';
+    }
+    return lang == 'hi' ? 'ट्रायल समाप्त - अपग्रेड करें' : 'Trial Ended - Upgrade Now';
   }
 
   void _showEditShopName(BuildContext context, WidgetRef ref, String? current) {

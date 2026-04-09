@@ -6,31 +6,36 @@ import '../screens/auth/auth_screen.dart';
 import '../screens/backup/backup_screen.dart';
 import '../screens/billing/billing_screen.dart';
 import '../screens/dashboard/dashboard_screen.dart';
+import '../core/providers/subscription_provider.dart';
 import '../screens/inventory/inventory_screen.dart';
 import '../screens/khata/khata_screen.dart';
 import '../screens/orders/orders_screen.dart';
 import '../screens/reports/reports_screen.dart';
 import '../screens/settings/settings_screen.dart';
 import '../screens/suppliers/suppliers_screen.dart';
+import '../screens/billing/paywall_screen.dart';
 
 final _shellKey = GlobalKey<NavigatorState>();
 
 // ✅ Accept Ref instead of WidgetRef
 GoRouter buildRouter(Ref ref) {
   final authState = ref.watch(authProvider);
+  final subState = ref.watch(subscriptionProvider);
 
   return GoRouter(
     initialLocation: '/',
     redirect: (context, state) {
       final isLoginRoute = state.matchedLocation == '/login';
+      final isBillingRoute = state.matchedLocation == '/billing';
       final isAuthenticated =
           authState.status == AuthStatus.authenticated;
       final isUnknown = authState.status == AuthStatus.unknown;
 
-      if (isUnknown) return null;
+      if (isUnknown || subState.isLoading) return null;
 
       if (!isAuthenticated && !isLoginRoute) return '/login';
       if (isAuthenticated && isLoginRoute) return '/';
+
       return null;
     },
     routes: [
@@ -71,6 +76,10 @@ GoRouter buildRouter(Ref ref) {
       GoRoute(
         path: '/billing',
         builder: (c, s) => const BillingScreen(),
+      ),
+      GoRoute(
+        path: '/subscription',
+        builder: (c, s) => const PaywallScreen(),
       ),
       GoRoute(
         path: '/suppliers',

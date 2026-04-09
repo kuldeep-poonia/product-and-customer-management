@@ -9,6 +9,7 @@ import '../../core/app_constants.dart';
 import '../../core/models.dart';
 import '../../core/providers.dart';
 import '../../core/widgets.dart';
+import '../../core/providers/subscription_provider.dart';
 
 class BillingScreen extends ConsumerStatefulWidget {
   const BillingScreen({super.key});
@@ -23,13 +24,9 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
   final _phoneCtrl = TextEditingController();
   final _discountCtrl = TextEditingController();
 
-  // Local search state — not a global provider so closing billing
-  // doesn't bleed the query into other screens.
   String _searchQuery = '';
-
   bool _saving = false;
 
-  // ── Barcode scan ─────────────────────────────────────────────────────────
   Future<void> _openScanner() async {
     final code = await Navigator.push<String>(
       context,
@@ -41,7 +38,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 
   void _addItemByBarcode(String barcode) {
     final products = ref.read(productsProvider);
-    // Match by barcode field or product id as fallback
     final match = products.where((p) => p.id == barcode).firstOrNull;
     if (match != null) {
       ref.read(billingProvider.notifier).addItem(match);
@@ -64,8 +60,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 
   @override
   void dispose() {
-    // Always reset shared providers when leaving billing so the next
-    // bill doesn't inherit a stale payment mode.
     ref.read(paymentModeProvider.notifier).state = PaymentMode.cash;
     _searchCtrl.dispose();
     _nameCtrl.dispose();
@@ -75,20 +69,22 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
   }
 
   double get _subtotal => ref.read(billingProvider.notifier).subtotal;
-
-  // Clamp discount so total can never go negative.
   double get _safeDiscount {
     final d = double.tryParse(_discountCtrl.text) ?? 0;
     return d.clamp(0, _subtotal);
   }
-
   double get _total => (_subtotal - _safeDiscount).clamp(0, double.infinity);
 
   Future<void> _saveBill() async {
+    final sub = ref.read(subscriptionProvider);
+    if (!sub.hasAccess) {
+      _showUpgradeRequiredDialog();
+      return;
+    }
+
     final items = ref.read(billingProvider);
     if (items.isEmpty) return;
 
-    // Validate stock for every item before touching any state.
     final stockError = ref.read(productsProvider.notifier).validateCartStock(items);
     if (stockError != null) {
       if (!mounted) return;
@@ -100,7 +96,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
       return;
     }
 
-    // Guard against double-tap — _saving is set before any async work.
     if (_saving) return;
     setState(() => _saving = true);
 
@@ -118,13 +113,11 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
 
     ref.read(billsProvider.notifier).addBill(bill);
 
-    // Deduct stock only after the bill is confirmed saved.
     final prodNotifier = ref.read(productsProvider.notifier);
     for (final item in items) {
       prodNotifier.updateStock(item.product.id, -item.qty);
     }
 
-    // Link udhaar to existing customer ledger if we can find them by name.
     if (mode == PaymentMode.udhaar && bill.customerName != null) {
       final customers = ref.read(customersProvider);
       final match = customers.where(
@@ -146,6 +139,33 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     if (!mounted) return;
     setState(() => _saving = false);
     _showBillSavedSheet(context, bill);
+  }
+
+  void _showUpgradeRequiredDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(children: [
+          Icon(Icons.lock_clock_outlined, color: AppColors.red600),
+          SizedBox(width: 10),
+          Text('Trial Expired'),
+        ]),
+        content: const Text(
+          'Your 7-day free trial has ended. To continue saving bills and managing inventory, please upgrade to ShopIQ Pro.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Maybe Later')),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              context.push('/subscription');
+            },
+            child: const Text('Upgrade Now'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showBillSavedSheet(BuildContext context, Bill bill) {
@@ -182,12 +202,10 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
     final discount = _safeDiscount;
     final total = _total;
 
-    // Warn user if typed discount was clamped.
     final typedDiscount = double.tryParse(_discountCtrl.text) ?? 0;
     final discountClamped = typedDiscount > subtotal && subtotal > 0;
 
     return PopScope(
-      // Intercept system back / swipe-back so the cart is always cleared.
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _clearAndPop();
@@ -216,14 +234,13 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
         body: SafeArea(
           child: Column(
             children: [
-            // Search bar — uses local state, no global provider.
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: TextField(
                 controller: _searchCtrl,
                 onChanged: (v) => setState(() => _searchQuery = v),
                 decoration: InputDecoration(
-                  hintText: 'Search item... (e.g. Atta, Tata)',
+                  hintText: 'Search item...',
                   prefixIcon: const Icon(Icons.search, size: 20),
                   suffixIcon: _searchQuery.isNotEmpty
                       ? IconButton(
@@ -239,7 +256,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
               ),
             ),
 
-            // Search results dropdown.
             if (_searchQuery.isNotEmpty)
               Container(
                 constraints: const BoxConstraints(maxHeight: 220),
@@ -280,7 +296,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                       ),
               ),
 
-            // Cart item list.
             Expanded(
               child: items.isEmpty
                   ? const EmptyState(
@@ -296,7 +311,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                     ),
             ),
 
-            // Footer with discount, payment mode, and save.
             if (items.isNotEmpty)
               Container(
                 decoration: BoxDecoration(
@@ -313,7 +327,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                 ),
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                 child: Column(children: [
-                  // Customer name + phone.
                   Row(children: [
                     Expanded(
                       child: TextField(
@@ -342,7 +355,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                   ]),
                   const SizedBox(height: 10),
 
-                  // Discount row with clamp warning.
                   Row(children: [
                     const Icon(Icons.discount_outlined,
                         size: 18, color: AppColors.amber600),
@@ -376,7 +388,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                   ]),
                   const SizedBox(height: 12),
 
-                  // Payment mode chips.
                   Row(children: [
                     const Text('Pay via:',
                         style: TextStyle(
@@ -402,7 +413,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
                   ]),
                   const SizedBox(height: 14),
 
-                  // Total and save button.
                   Row(children: [
                     Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -448,7 +458,6 @@ class _BillingScreenState extends ConsumerState<BillingScreen> {
   }
 }
 
-// Quantity row for each cart item.
 class _BillItemRow extends ConsumerWidget {
   final BillItem item;
   const _BillItemRow({required this.item});
@@ -563,7 +572,7 @@ class _BillSavedSheet extends StatelessWidget {
     sb.writeln('*Total: ${fmtRupee(bill.total)}*');
     sb.writeln('Payment: ${bill.paymentMode.name.toUpperCase()}');
     sb.writeln('');
-    sb.writeln('Thank you! - ${AppConstants.appName}');
+    sb.writeln('Thank you!');
     return sb.toString();
   }
 
@@ -635,7 +644,7 @@ class _BillSavedSheet extends StatelessWidget {
         Row(children: [
           Expanded(
             child: WhatsAppButton(
-              label: 'Send on WhatsApp',
+              label: 'WhatsApp',
               onTap: () => _sendWhatsApp(context),
             ),
           ),
@@ -649,9 +658,6 @@ class _BillSavedSheet extends StatelessWidget {
     );
   }
 }
-
-// ── Barcode Scanner Screen ─────────────────────────────────────────────────────
-// Pushed from billing AppBar. Returns the scanned barcode string via Navigator.pop.
 
 class _BarcodeScannerScreen extends StatefulWidget {
   const _BarcodeScannerScreen();
@@ -704,13 +710,10 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
       ),
       body: Stack(
         children: [
-          // Camera view
           MobileScanner(
             controller: _ctrl,
             onDetect: _onDetect,
           ),
-
-          // Scan overlay
           Center(
             child: Container(
               width: 260,
@@ -721,7 +724,6 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
               ),
               child: Stack(
                 children: [
-                  // Corner decorations
                   for (final align in [
                     Alignment.topLeft,
                     Alignment.topRight,
@@ -758,8 +760,6 @@ class _BarcodeScannerScreenState extends State<_BarcodeScannerScreen> {
               ),
             ),
           ),
-
-          // Instruction text
           Positioned(
             bottom: 80,
             left: 0, right: 0,

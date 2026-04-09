@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../app/theme.dart';
@@ -8,6 +9,7 @@ import '../../core/models.dart';
 import '../../core/providers.dart';
 import '../../core/widgets.dart';
 import '../auth/auth_screen.dart';
+import '../../core/providers/subscription_provider.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -63,6 +65,7 @@ class DashboardScreen extends ConsumerWidget {
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 100),
             sliver: SliverList(delegate: SliverChildListDelegate([
+              const _StatusBanner(),
               _TodaySalesCard(todaySales: todaySales, todayCash: todayCash, todayUpi: todayUpi, label: l.todaySale),
               const SizedBox(height: 16),
 
@@ -124,6 +127,66 @@ class DashboardScreen extends ConsumerWidget {
         foregroundColor: Colors.white,
         icon: const Icon(Icons.receipt_long),
         label: const Text('Quick Bill', style: TextStyle(fontWeight: FontWeight.w700)),
+      ),
+    );
+  }
+}
+
+class _StatusBanner extends ConsumerWidget {
+  const _StatusBanner();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final sub = ref.watch(subscriptionProvider);
+    if (sub.isLoading) return const SizedBox.shrink();
+    if (sub.hasAccess && sub.trialDaysLeft > 2) return const SizedBox.shrink();
+
+    Color bgColor = AppColors.amber50;
+    Color textColor = AppColors.amber600;
+    IconData icon = Icons.warning_amber_rounded;
+    String title = '';
+    String action = 'Upgrade';
+
+    if (sub.isPending) {
+       bgColor = AppColors.blue50;
+       textColor = AppColors.blue600;
+       icon = Icons.history_toggle_off_rounded;
+       title = 'Verification in progress...';
+       action = 'Details';
+    } else if (sub.isExpired) {
+       bgColor = AppColors.red50;
+       textColor = AppColors.red600;
+       icon = Icons.lock_outline;
+       title = 'Trial expired. Upgrade to save bills.';
+       action = 'Upgrade';
+    } else if (sub.trialDaysLeft <= 2) {
+       title = 'Trial ending in ${sub.trialDaysLeft} days. Upgrade soon!';
+    } else {
+       return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          HapticFeedback.lightImpact();
+          context.push('/subscription');
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: textColor.withOpacity(0.2)),
+          ),
+          child: Row(children: [
+            Icon(icon, color: textColor, size: 20),
+            const SizedBox(width: 12),
+            Expanded(child: Text(title, style: TextStyle(color: textColor, fontWeight: FontWeight.w600, fontSize: 13))),
+            const SizedBox(width: 8),
+            Text(action, style: TextStyle(color: textColor, fontWeight: FontWeight.w800, fontSize: 13, decoration: TextDecoration.underline)),
+          ]),
+        ),
       ),
     );
   }
@@ -271,7 +334,7 @@ class _SupplierTile extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(supplier.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-          Text('Last: ${fmtDay(DateTime.now()!)}', style: TextStyle(fontSize: 11, color: cs.outline)),
+          Text('Last: ${fmtDay(DateTime.now())}', style: TextStyle(fontSize: 11, color: cs.outline)),
         ])),
         Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
           Text(fmtRupee(supplier.amountDue), style: TextStyle(fontWeight: FontWeight.w800, fontSize: 15, color: supplier.amountDue > 0 ? AppColors.red600 : AppColors.green600)),

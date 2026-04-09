@@ -373,28 +373,38 @@ class _SupplierCard extends StatelessWidget {
               border: Border(top: BorderSide(color: cs.outlineVariant.withOpacity(0.5))),
             ),
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-            child: Row(children: [
-              _ActionBtn(icon: Icons.phone, label: 'Call', color: AppColors.green600, onTap: () => _call(supplier.phone)),
-              _ActionBtn(icon: Icons.chat, label: 'WhatsApp', color: AppColors.waGreen, onTap: () => _whatsapp(supplier)),
-              _ActionBtn(icon: Icons.history, label: 'History', color: AppColors.blue600, onTap: onHistory),
-              if (supplier.amountDue > 0)
-                _ActionBtn(icon: Icons.payments_outlined, label: 'Pay', color: AppColors.amber600, onTap: onPayment),
-              const Spacer(),
-              IconButton(
-                icon: Icon(Icons.edit_outlined, size: 18, color: cs.outline),
-                onPressed: onEdit,
-                tooltip: 'Edit',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              ),
-              IconButton(
-                icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.red600),
-                onPressed: onDelete,
-                tooltip: 'Delete',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              ),
-            ]),
+            child: Row(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        _ActionBtn(icon: Icons.phone, label: 'Call', color: AppColors.green600, onTap: () => _call(supplier.phone)),
+                        _ActionBtn(icon: Icons.chat, label: 'WhatsApp', color: AppColors.waGreen, onTap: () => _whatsapp(supplier)),
+                        _ActionBtn(icon: Icons.history, label: 'History', color: AppColors.blue600, onTap: onHistory),
+                        if (supplier.amountDue > 0)
+                          _ActionBtn(icon: Icons.payments_outlined, label: 'Pay', color: AppColors.amber600, onTap: onPayment),
+                      ],
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.edit_outlined, size: 18, color: cs.outline),
+                  onPressed: onEdit,
+                  tooltip: 'Edit',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 18, color: AppColors.red600),
+                  onPressed: onDelete,
+                  tooltip: 'Delete',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                ),
+              ],
+            ),
           ),
         ],
       ),

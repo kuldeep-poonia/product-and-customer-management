@@ -7,6 +7,7 @@ import 'package:local_auth/local_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../app/theme.dart';
 import '../../core/app_constants.dart';
+import '../../core/providers/subscription_provider.dart';
 
 // ─── AUTH STATE ───────────────────────────────────────────────────────────────
 
@@ -61,8 +62,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
   static const _kLoggedIn = 'shopiq_logged_in';
 
   final _localAuth = LocalAuthentication();
+  final Ref ref;
 
-  AuthNotifier() : super(const AuthState(status: AuthStatus.unknown)) {
+  AuthNotifier(this.ref) : super(const AuthState(status: AuthStatus.unknown)) {
     _restoreSession();
   }
 
@@ -110,13 +112,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_kShop, shopName);
       await prefs.setString(_kOwner, ownerName);
-      await prefs.setBool(_kLoggedIn, true);
       state = AuthState(
         status: AuthStatus.authenticated,
         ownerPhone: phone,
         shopName: shopName,
         ownerName: ownerName,
       );
+
+      // ✅ Start 7-day trial automatically on signup
+      await ref.read(subscriptionProvider.notifier).startTrial();
     } catch (_) {
       state = state.copyWith(
         isLoading: false,
@@ -190,9 +194,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
         ),
       );
       if (!ok) return false;
+      
+      final storedPin = await _storage.read(key: _kPin);
+      if (storedPin == null || storedPin.isEmpty) return false;
+
       final prefs = await SharedPreferences.getInstance();
-      final isLoggedIn = prefs.getBool(_kLoggedIn) ?? false;
-      if (!isLoggedIn) return false;
       final phone = await _storage.read(key: _kPhone) ?? '';
       final shopName = prefs.getString(_kShop) ?? AppConstants.defaultShopName;
       final ownerName = prefs.getString(_kOwner) ?? '';
@@ -237,8 +243,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 }
 
-final authProvider =
-    StateNotifierProvider<AuthNotifier, AuthState>((ref) => AuthNotifier());
+final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
+  return AuthNotifier(ref);
+});
 
 // ─── LOGIN SCREEN ─────────────────────────────────────────────────────────────
 
@@ -428,17 +435,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                 ),
               ],
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               Center(
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text(_isSignup ? 'Already have an account? ' : 'New here? ',
-                      style: TextStyle(color: cs.outline, fontSize: 13)),
-                  GestureDetector(
-                    onTap: () => setState(() => _isSignup = !_isSignup),
-                    child: Text(_isSignup ? 'Login' : 'Create account',
-                        style: TextStyle(color: cs.primary, fontSize: 13, fontWeight: FontWeight.w700)),
+                child: TextButton(
+                  onPressed: () => setState(() => _isSignup = !_isSignup),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: cs.primary.withOpacity(0.2))),
                   ),
-                ]),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(_isSignup ? 'Already have an account? ' : 'New here? ', style: TextStyle(color: cs.outline, fontSize: 13)),
+                      Text(_isSignup ? 'LOG IN' : 'CREATE ACCOUNT', style: TextStyle(color: cs.primary, fontSize: 13, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
+                    ],
+                  ),
+                ),
               ),
               if (!_isSignup) ...[
                 const SizedBox(height: 8),
@@ -496,8 +508,10 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   final _ownerCtrl = TextEditingController();
   final List<String> _pin = [];
   final List<String> _confirmPin = [];
+  final List<String> _otp = [];
   bool _confirming = false;
   bool _pinError = false;
+  bool _isVerifying = false;
 
   @override
   void initState() {
@@ -530,6 +544,32 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     FocusScope.of(context).unfocus();
     setState(() => _page = 1);
     _pageCtrl.animateToPage(1, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+  }
+
+  void _onOtpKey(String key) {
+    if (_isVerifying) return;
+    if (key == 'del') {
+      if (_otp.isNotEmpty) setState(() => _otp.removeLast());
+      return;
+    }
+    if (_otp.length >= 6) return;
+    setState(() => _otp.add(key));
+    if (_otp.length == 6) {
+      _verifyOtp();
+    }
+  }
+
+  Future<void> _verifyOtp() async {
+    setState(() => _isVerifying = true);
+    // Simulate network delay for "Realism"
+    await Future.delayed(const Duration(seconds: 2));
+    if (mounted) {
+      setState(() {
+        _isVerifying = false;
+        _page = 2;
+      });
+      _pageCtrl.animateToPage(2, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+    }
   }
 
   void _onPinKey(String key) {
@@ -569,13 +609,23 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
-        title: Text(_page == 0 ? 'Shop Setup (1/2)' : 'Create PIN (2/2)'),
+        title: Text(_page == 0 ? 'Shop Setup (1/3)' : _page == 1 ? 'Verify Phone (2/3)' : 'Create PIN (3/3)'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
-            if (_page == 1) {
-              setState(() { _page = 0; _pin.clear(); _confirmPin.clear(); _confirming = false; _pinError = false; });
-              _pageCtrl.animateToPage(0, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+            if (_page > 0) {
+              final target = _page - 1;
+              setState(() {
+                _page = target;
+                if (target == 0) {
+                   _otp.clear();
+                } else if (target == 1) {
+                  _pin.clear();
+                  _confirmPin.clear();
+                  _confirming = false;
+                }
+              });
+              _pageCtrl.animateToPage(target, duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
             } else {
               Navigator.pop(context);
             }
@@ -584,7 +634,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
       ),
       body: Column(children: [
         TweenAnimationBuilder<double>(
-          tween: Tween(begin: 0.5, end: _page == 0 ? 0.5 : 1.0),
+          tween: Tween(begin: 0.33, end: (_page + 1) / 3.0),
           duration: const Duration(milliseconds: 300),
           builder: (_, v, __) => LinearProgressIndicator(value: v, backgroundColor: cs.surfaceContainerHighest),
         ),
@@ -619,7 +669,57 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   ),
                 ]),
               ),
-              // ── Page 2: PIN ──────────────────────────────────────────────
+              // ── Page 2: OTP Verification ─────────────────────────────────
+              SafeArea(
+                child: Column(children: [
+                   const SizedBox(height: 32),
+                   const Icon(Icons.mark_email_read_outlined, size: 64, color: AppColors.green600),
+                   const SizedBox(height: 24),
+                   const Text('Verify your number', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800)),
+                   const SizedBox(height: 8),
+                   Text('Enter the 6-digit code sent to +91 ${_phoneCtrl.text}',
+                       style: TextStyle(fontSize: 14, color: cs.outline), textAlign: TextAlign.center),
+                   const SizedBox(height: 40),
+                   if (_isVerifying) ...[
+                     const CircularProgressIndicator(),
+                     const SizedBox(height: 16),
+                     const Text('Verifying OTP...', style: TextStyle(fontWeight: FontWeight.w600)),
+                   ] else ...[
+                     Row(
+                       mainAxisAlignment: MainAxisAlignment.center,
+                       children: List.generate(6, (i) => Container(
+                         margin: const EdgeInsets.symmetric(horizontal: 6),
+                         width: 40, height: 50,
+                         decoration: BoxDecoration(
+                           color: cs.surfaceContainerHighest.withOpacity(0.5),
+                           borderRadius: BorderRadius.circular(10),
+                           border: Border.all(color: i < _otp.length ? cs.primary : cs.outlineVariant, width: i < _otp.length ? 2 : 1),
+                         ),
+                         alignment: Alignment.center,
+                         child: Text(i < _otp.length ? _otp[i] : '', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                       )),
+                     ),
+                     const Spacer(),
+                     Padding(
+                       padding: const EdgeInsets.symmetric(horizontal: 48),
+                       child: Column(children: [
+                         for (final row in [['1','2','3'],['4','5','6'],['7','8','9'],['','0','del']])
+                           Row(
+                             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                             children: row.map((k) => k.isEmpty
+                               ? const SizedBox(width: 72, height: 72)
+                               : _PinKey(label: k, onTap: () => _onOtpKey(k))
+                             ).toList(),
+                           ),
+                       ]),
+                     ),
+                     const SizedBox(height: 16),
+                     TextButton(onPressed: () {}, child: const Text('Resend code in 00:29')),
+                   ],
+                   const SizedBox(height: 32),
+                ]),
+              ),
+              // ── Page 3: PIN ──────────────────────────────────────────────
               SafeArea(
                 child: Column(children: [
                   const SizedBox(height: 32),
